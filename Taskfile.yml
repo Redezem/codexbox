@@ -1,0 +1,59 @@
+version: '3'
+
+vars:
+  BINARY: codexbox
+
+silent: false
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - gofmt -w cmd internal
+
+  tidy:
+    desc: Tidy Go modules
+    cmds:
+      - go mod tidy
+
+  build:
+    desc: Build the codexbox CLI
+    cmds:
+      - go build -o {{.BINARY}} ./cmd/codexbox
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - go test ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  check:
+    desc: Run fmt, vet, and test
+    deps:
+      - fmt
+      - vet
+      - test
+
+  image-build:
+    desc: Build the base container image
+    cmds:
+      - ./{{.BINARY}} image build
+
+  image-update:
+    desc: Update and rebuild the base container image
+    cmds:
+      - ./{{.BINARY}} image update
+
+  clean:
+    desc: Remove built binary
+    cmds:
+      - rm -f {{.BINARY}}
