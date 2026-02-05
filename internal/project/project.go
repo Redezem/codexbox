@@ -43,7 +43,7 @@ func stableID(root, remote string) string {
 		seed = seed + "|" + remote
 	}
 	h := sha256.Sum256([]byte(seed))
-	return hex.EncodeToString(h[:8])
+	return hex.EncodeToString(h[:16])
 }
 
 func gitTopLevel(dir string) (string, error) {
@@ -66,4 +66,8 @@ func gitOriginURL(dir string) string {
 
 func ContainerName(projectID string) string {
 	return "codexbox-" + projectID
+}
+
+func VolumeName(projectID, suffix string) string {
+	return "codexbox-" + projectID + "-" + suffix
 }

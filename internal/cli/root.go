@@ -228,10 +228,10 @@ func createContainer(engine docker.Engine, opts options, info project.Info) (reg
 	}
 	mounts := []docker.Mount{
 		{Source: info.Root, Target: "/workspace", Readonly: opts.Readonly},
-		{Source: "codexbox-cache-go", Target: "/go/pkg/mod"},
-		{Source: "codexbox-cache-cargo", Target: "/root/.cargo"},
-		{Source: "codexbox-cache-npm", Target: "/root/.npm"},
-		{Source: "codexbox-cache-pip", Target: "/root/.cache/pip"},
+		{Source: project.VolumeName(info.ID, "go"), Target: "/go/pkg/mod"},
+		{Source: project.VolumeName(info.ID, "cargo"), Target: "/root/.cargo"},
+		{Source: project.VolumeName(info.ID, "npm"), Target: "/root/.npm"},
+		{Source: project.VolumeName(info.ID, "pip"), Target: "/root/.cache/pip"},
 		{Source: filepath.Join(home, ".codex"), Target: "/root/.codex"},
 	}
 	labels := map[string]string{
