@@ -158,10 +158,13 @@ func (e Engine) ExecInteractive(name string, cmd []string) error {
 	return e.run(args...)
 }
 
-func (e Engine) BuildImage(tag, contextDir string, pull bool) error {
+func (e Engine) BuildImage(tag, contextDir string, pull, noCache bool) error {
 	args := []string{"build", "-t", tag}
 	if pull {
 		args = append(args, "--pull")
+	}
+	if noCache {
+		args = append(args, "--no-cache")
 	}
 	args = append(args, contextDir)
 	return e.run(args...)

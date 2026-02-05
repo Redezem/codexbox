@@ -23,7 +23,7 @@ This gives you:
 
 ## Features
 
-- Fedora-based image with Go, Rust (rustup), Node.js, Python, and C/C++ toolchain
+- Fedora-based image with latest Go, Rust (rustup), Node.js, Python, go-task, and C/C++ toolchain
 - Per-project persistent containers
 - Automatic project detection from directory or git repo
 - Resume Codex sessions automatically
@@ -139,10 +139,10 @@ Delete a project container:
 codexbox rm <project>
 ```
 
-Recreate a project using the latest base image:
+Recreate a project using the latest base image (defaults to the current project if omitted):
 
 ```bash
-codexbox rebase <project>
+codexbox rebase [project]
 ```
 
 Show status for the current project container:
@@ -166,6 +166,10 @@ Update and rebuild image:
 ```bash
 codexbox image update
 ```
+
+The base image installs the latest Go release at build time and includes the `task` CLI.
+
+`image update` pulls the latest base layers and rebuilds without using build cache.
 
 New projects will use the new image automatically.
 

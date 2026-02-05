@@ -8,14 +8,14 @@ import (
 )
 
 func Build(engine docker.Engine, tag, contextDir string) error {
-	return buildInternal(engine, tag, false)
+	return buildInternal(engine, tag, false, false)
 }
 
 func Update(engine docker.Engine, tag, contextDir string) error {
-	return buildInternal(engine, tag, true)
+	return buildInternal(engine, tag, true, true)
 }
 
-func buildInternal(engine docker.Engine, tag string, pull bool) error {
+func buildInternal(engine docker.Engine, tag string, pull, noCache bool) error {
 	tmpDir, err := os.MkdirTemp("", "codexbox-image-")
 	if err != nil {
 		return err
@@ -26,5 +26,5 @@ func buildInternal(engine docker.Engine, tag string, pull bool) error {
 	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0o644); err != nil {
 		return err
 	}
-	return engine.BuildImage(tag, tmpDir, pull)
+	return engine.BuildImage(tag, tmpDir, pull, noCache)
 }

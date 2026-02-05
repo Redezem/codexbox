@@ -338,15 +338,32 @@ func newRmCmd(opts options) *cobra.Command {
 
 func newRebaseCmd(opts options) *cobra.Command {
 	return &cobra.Command{
-		Use:   "rebase <project>",
+		Use:   "rebase [project]",
 		Short: "Recreate project container using latest image",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			engine, err := ensureEngine(opts.Engine)
 			if err != nil {
 				return err
 			}
-			id := strings.TrimSpace(args[0])
+			id := ""
+			if len(args) > 0 {
+				id = strings.TrimSpace(args[0])
+			} else {
+				cwd, err := os.Getwd()
+				if err != nil {
+					return err
+				}
+				pscope := project.Scope(opts.ProjectScope)
+				if pscope != project.ScopeRepo && pscope != project.ScopeDir {
+					return fmt.Errorf("invalid --project-scope: %s", opts.ProjectScope)
+				}
+				info, err := project.Detect(pscope, cwd)
+				if err != nil {
+					return err
+				}
+				id = info.ID
+			}
 			name := project.ContainerName(id)
 			_ = engine.RemoveContainer(name)
 
