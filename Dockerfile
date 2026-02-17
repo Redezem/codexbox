@@ -4,7 +4,7 @@ RUN dnf -y update && dnf -y install \
     git curl wget ca-certificates \
     gcc gcc-c++ clang lld make cmake ninja-build pkgconf-pkg-config gdb \
     python3 python3-pip python3-virtualenv \
-    nodejs npm \
+    nodejs npm zsh \
     && dnf clean all
 
 RUN python3 - <<'PY' >/tmp/go-version
@@ -33,6 +33,33 @@ RUN set -eu; \
     tar -C /usr/local -xzf /tmp/go.tgz; \
     rm -f /tmp/go.tgz
 ENV PATH="/usr/local/go/bin:${PATH}"
+
+RUN python3 - <<'PY' >/tmp/dotnet-version
+import json,urllib.request
+with urllib.request.urlopen('https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json') as resp:
+    channels = json.load(resp)['releases-index']
+stable_channels = [
+    channel for channel in channels
+    if channel.get('support-phase') not in {'eol', 'preview'} and channel.get('latest-sdk')
+]
+if not stable_channels:
+    raise SystemExit('no supported stable .NET channel found')
+def channel_key(channel):
+    return tuple(int(part) for part in channel['channel-version'].split('.'))
+latest = max(stable_channels, key=channel_key)
+print(latest['latest-sdk'])
+PY
+
+RUN set -eu; \
+    DOTNET_VERSION="$(cat /tmp/dotnet-version)"; \
+    rm -f /tmp/dotnet-version; \
+    curl -sSfL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh; \
+    chmod +x /tmp/dotnet-install.sh; \
+    /tmp/dotnet-install.sh --version "${DOTNET_VERSION}" --install-dir /usr/local/dotnet --no-path; \
+    ln -sf /usr/local/dotnet/dotnet /usr/local/bin/dotnet; \
+    rm -f /tmp/dotnet-install.sh
+ENV DOTNET_ROOT="/usr/local/dotnet"
+ENV PATH="/usr/local/dotnet:${PATH}"
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"

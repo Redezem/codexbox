@@ -23,7 +23,7 @@ This gives you:
 
 ## Features
 
-- Fedora-based image with latest Go, Rust (rustup), Node.js, Python, go-task, and C/C++ toolchain
+- Fedora-based image with latest Go and .NET SDK, Rust (rustup), Node.js, Python, zsh, go-task, and C/C++ toolchain
 - Per-project persistent containers
 - Automatic project detection from directory or git repo
 - Resume Codex sessions automatically
@@ -167,7 +167,7 @@ Update and rebuild image:
 codexbox image update
 ```
 
-The base image installs the latest Go release at build time and includes the `task` CLI.
+The base image installs the latest Go and .NET SDK releases at build time and includes `zsh` and the `task` CLI.
 
 `image update` pulls the latest base layers and rebuilds without using build cache.
 
