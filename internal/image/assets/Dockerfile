@@ -1,4 +1,4 @@
-FROM fedora:41
+FROM fedora:rawhide
 
 RUN dnf -y update && dnf -y install \
     git curl wget ca-certificates \
