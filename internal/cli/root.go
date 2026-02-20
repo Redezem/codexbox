@@ -171,7 +171,6 @@ func runDefault(cmd *cobra.Command, opts options) error {
 		exists = false
 	}
 
-	created := !exists
 	if !exists {
 		entry, err := createContainer(engine, opts, info)
 		if err != nil {
@@ -208,10 +207,8 @@ func runDefault(cmd *cobra.Command, opts options) error {
 		execCmd = []string{"bash"}
 	case opts.Cmd != "":
 		execCmd = []string{"sh", "-lc", opts.Cmd}
-	case created:
-		execCmd = []string{"codex", "--dangerously-bypass-approvals-and-sandbox"}
 	default:
-		execCmd = []string{"codex", "resume", "--dangerously-bypass-approvals-and-sandbox"}
+		execCmd = []string{"codex", "--dangerously-bypass-approvals-and-sandbox"}
 	}
 
 	if err := engine.ExecInteractive(containerName, execCmd); err != nil {
