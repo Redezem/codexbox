@@ -112,6 +112,18 @@ func ensureEngine(name string) (docker.Engine, error) {
 	return docker.Engine{Binary: name}, nil
 }
 
+func withRegistryFileLock(regPath string, fn func() error) error {
+	lockPath := regPath + ".lock"
+	l, err := lock.Acquire(lockPath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = l.Release()
+	}()
+	return fn()
+}
+
 func runDefault(cmd *cobra.Command, opts options) error {
 	if opts.Shell && opts.Cmd != "" {
 		return errors.New("cannot use --shell and --cmd together")
@@ -150,7 +162,11 @@ func runDefault(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return err
 	}
-	defer l.Release()
+	defer func() {
+		if l != nil {
+			_ = l.Release()
+		}
+	}()
 
 	reg, err := registry.Load(regPath)
 	if err != nil {
@@ -200,6 +216,10 @@ func runDefault(cmd *cobra.Command, opts options) error {
 	if err := registry.Save(regPath, reg); err != nil {
 		return err
 	}
+	if err := l.Release(); err != nil {
+		return err
+	}
+	l = nil
 
 	var execCmd []string
 	switch {
@@ -281,8 +301,15 @@ func newListCmd(opts options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			reg, err := registry.Load(regPath)
-			if err != nil {
+			var reg registry.Registry
+			if err := withRegistryFileLock(regPath, func() error {
+				loaded, err := registry.Load(regPath)
+				if err != nil {
+					return err
+				}
+				reg = loaded
+				return nil
+			}); err != nil {
 				return err
 			}
 			if len(reg.Entries) == 0 {
@@ -323,12 +350,14 @@ func newRmCmd(opts options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			reg, err := registry.Load(regPath)
-			if err != nil {
-				return err
-			}
-			delete(reg.Entries, id)
-			return registry.Save(regPath, reg)
+			return withRegistryFileLock(regPath, func() error {
+				reg, err := registry.Load(regPath)
+				if err != nil {
+					return err
+				}
+				delete(reg.Entries, id)
+				return registry.Save(regPath, reg)
+			})
 		},
 	}
 }
@@ -368,29 +397,39 @@ func newRebaseCmd(opts options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			lockPath := regPath + ".lock"
-			l, err := lock.Acquire(lockPath)
-			if err != nil {
+			var entry registry.Entry
+			if err := withRegistryFileLock(regPath, func() error {
+				reg, err := registry.Load(regPath)
+				if err != nil {
+					return err
+				}
+				e, ok := reg.Entries[id]
+				if !ok {
+					return fmt.Errorf("project not found in registry: %s", id)
+				}
+				entry = e
+				return nil
+			}); err != nil {
 				return err
 			}
-			defer l.Release()
 
-			reg, err := registry.Load(regPath)
-			if err != nil {
-				return err
-			}
-			entry, ok := reg.Entries[id]
-			if !ok {
-				return fmt.Errorf("project not found in registry: %s", id)
-			}
 			info := project.Info{ID: id, Root: entry.Path}
 			newEntry, err := createContainer(engine, opts, info)
 			if err != nil {
 				return err
 			}
 			newEntry.LastUsed = time.Now().UTC()
-			reg.Entries[id] = newEntry
-			if err := registry.Save(regPath, reg); err != nil {
+			if err := withRegistryFileLock(regPath, func() error {
+				reg, err := registry.Load(regPath)
+				if err != nil {
+					return err
+				}
+				if reg.Entries == nil {
+					reg.Entries = map[string]registry.Entry{}
+				}
+				reg.Entries[id] = newEntry
+				return registry.Save(regPath, reg)
+			}); err != nil {
 				return err
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "rebased container", name)
