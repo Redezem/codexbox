@@ -6,10 +6,10 @@ Each project directory gets its own long-lived container. When you run `codexbox
 
 1. Mounts the current directory into the container at `/workspace`
 2. Starts (or resumes) the project container
-3. Runs `codex` inside it
+3. Runs `codex` inside it through a small launch wrapper
 4. Stops the container when Codex exits (but does not delete it)
 
-The next time you run `codexbox` in the same directory, it resumes the same container and runs `codex resume`.
+The next time you run `codexbox` in the same directory, it reuses the same container and starts a new Codex session in that persistent environment.
 
 This gives you:
 
@@ -18,15 +18,16 @@ This gives you:
 - Clean separation between projects
 - No host pollution
 - A consistent Fedora dev environment everywhere
+- Built-in peon-ping integration for Codex sessions
 
 ---
 
 ## Features
 
-- Fedora-based image with latest Go and .NET SDK, Rust (rustup), Node.js, Python, zsh, go-task, and C/C++ toolchain
+- Fedora-based image with latest Go and .NET SDK, Rust (rustup), Node.js, Python, zsh, go-task, `mise`, and C/C++ toolchain
 - Per-project persistent containers
 - Automatic project detection from directory or git repo
-- Resume Codex sessions automatically
+- Reuse the same persistent container across runs
 - Image versioning and upgrade path
 - Project listing and deletion
 - Destructive rebase to the newest image
@@ -35,13 +36,15 @@ This gives you:
 - Safe secret handling (env or env-file)
 - Resource limit flags
 - Optional per-directory or per-repo project scoping
+- peon-ping installed in the image with default voice pack `peasant`
+- Launch-time peon-ping notify bootstrap and startup self-check
 
 ---
 
 ## Requirements
 
 - Docker or Podman
-- OpenAI Codex CLI available inside the image
+- No separate host Codex install is required; the base image installs `@openai/codex`
 
 ---
 
@@ -74,12 +77,12 @@ codexbox
 First run:
 
 - Creates the container
-- Runs `codex`
+- Runs `codexbox-launch`, which prepares peon-ping integration and then starts `codex`
 
 Subsequent runs:
 
 - Starts the container
-- Runs `codex resume`
+- Runs `codexbox-launch`, which prepares peon-ping integration and then starts `codex`
 
 When Codex exits, the container is stopped.
 
@@ -155,7 +158,7 @@ codexbox status
 
 ## Managing the Base Image
 
-Build image from Dockerfile:
+Build the base image:
 
 ```bash
 codexbox image build
@@ -168,6 +171,7 @@ codexbox image update
 ```
 
 The base image installs the latest Go and .NET SDK releases at build time and includes `zsh` and the `task` CLI.
+It also installs `@openai/codex`, peon-ping, and the `codexbox-launch` wrapper used for default sessions.
 
 `image update` pulls the latest base layers and rebuilds without using build cache.
 

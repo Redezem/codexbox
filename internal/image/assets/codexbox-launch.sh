@@ -96,5 +96,26 @@ config_path.write_text("".join(updated_root + updated_table), encoding="utf-8")
 PY
 }
 
+run_peon_startup_check() {
+    peon_dir="${CLAUDE_PEON_DIR:-/usr/local/share/claude/hooks/peon-ping}"
+    peon_sh="${peon_dir}/peon.sh"
+
+    if [ ! -f "$peon_sh" ]; then
+        return 0
+    fi
+
+    if output="$(PEON_TEST=1 PLATFORM=devcontainer bash "$peon_sh" 2>&1 <<'JSON'
+{"hook_event_name":"SessionStart","cwd":"/workspace","session_id":"debug-s1","source":"codex"}
+JSON
+    )"; then
+        return 0
+    fi
+
+    printf '%s\n' "codexbox-launch: warning: peon-ping startup check failed" >&2
+    printf '%s\n' "$output" >&2
+    return 0
+}
+
 ensure_peon_codex_notify
+run_peon_startup_check
 exec "$@"

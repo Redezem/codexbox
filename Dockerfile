@@ -75,6 +75,7 @@ RUN curl -fsSL https://mise.jdx.dev/install.sh | env MISE_INSTALL_PATH=/usr/loca
 
 RUN git clone --depth=1 https://github.com/PeonPing/peon-ping.git /tmp/peon-ping \
     && CLAUDE_CONFIG_DIR=/usr/local/share/claude REMOTE_CONTAINERS=true bash /tmp/peon-ping/install.sh --no-rc \
+    && python3 -c 'import json; from pathlib import Path; config_path = Path("/usr/local/share/claude/hooks/peon-ping/config.json"); config = json.loads(config_path.read_text(encoding="utf-8")); config["default_pack"] = "peasant"; "active_pack" in config and config.__setitem__("active_pack", "peasant"); config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")' \
     && ln -sf /usr/local/share/claude/hooks/peon-ping/peon.sh /usr/local/bin/peon \
     && ln -sf /usr/local/share/claude/hooks/peon-ping/relay.sh /usr/local/bin/peon-relay \
     && rm -rf /tmp/peon-ping
