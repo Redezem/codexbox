@@ -1,5 +1,10 @@
 FROM fedora:43
 
+ENV REMOTE_CONTAINERS=true \
+    CODEXBOX=true \
+    CLAUDE_CONFIG_DIR=/usr/local/share/claude \
+    CLAUDE_PEON_DIR=/usr/local/share/claude/hooks/peon-ping
+
 RUN dnf -y update && dnf -y install \
     git curl wget ca-certificates \
     gcc gcc-c++ clang lld make cmake ninja-build pkgconf-pkg-config gdb \
@@ -66,7 +71,18 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN curl -sSfL https://taskfile.dev/install.sh | sh -s -- -d -b /usr/local/bin
 
+RUN curl -fsSL https://mise.jdx.dev/install.sh | env MISE_INSTALL_PATH=/usr/local/bin/mise sh
+
+RUN git clone --depth=1 https://github.com/PeonPing/peon-ping.git /tmp/peon-ping \
+    && CLAUDE_CONFIG_DIR=/usr/local/share/claude REMOTE_CONTAINERS=true bash /tmp/peon-ping/install.sh --no-rc \
+    && ln -sf /usr/local/share/claude/hooks/peon-ping/peon.sh /usr/local/bin/peon \
+    && ln -sf /usr/local/share/claude/hooks/peon-ping/relay.sh /usr/local/bin/peon-relay \
+    && rm -rf /tmp/peon-ping
+
 RUN npm install -g @openai/codex
+
+COPY internal/image/assets/codexbox-launch.sh /usr/local/bin/codexbox-launch
+RUN chmod +x /usr/local/bin/codexbox-launch
 
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

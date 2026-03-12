@@ -26,5 +26,9 @@ func buildInternal(engine docker.Engine, tag string, pull, noCache bool) error {
 	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0o644); err != nil {
 		return err
 	}
+	launchScriptPath := filepath.Join(tmpDir, "codexbox-launch.sh")
+	if err := os.WriteFile(launchScriptPath, []byte(launchScript), 0o755); err != nil {
+		return err
+	}
 	return engine.BuildImage(tag, tmpDir, pull, noCache)
 }
