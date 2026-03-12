@@ -53,3 +53,17 @@ func TestContainerEnvIncludesRuntimeFlags(t *testing.T) {
 		t.Fatalf("CODEX_HOME = %q", env["CODEX_HOME"])
 	}
 }
+
+func TestContainerEnvIncludesOptionalPeonMobilePushoverVars(t *testing.T) {
+	t.Setenv(peonPushoverUserKeyEnvVar, "user-key")
+	t.Setenv(peonPushoverAppTokenEnvVar, "app-token")
+
+	env := containerEnv()
+
+	if env[peonPushoverUserKeyEnvVar] != "user-key" {
+		t.Fatalf("%s = %q", peonPushoverUserKeyEnvVar, env[peonPushoverUserKeyEnvVar])
+	}
+	if env[peonPushoverAppTokenEnvVar] != "app-token" {
+		t.Fatalf("%s = %q", peonPushoverAppTokenEnvVar, env[peonPushoverAppTokenEnvVar])
+	}
+}

@@ -13,8 +13,76 @@ resolve_codex_home() {
     printf '%s\n' "${HOME:-/root}/.codex"
 }
 
+resolve_peon_dir() {
+    install_peon_dir="${CLAUDE_PEON_DIR:-/usr/local/share/claude/hooks/peon-ping}"
+    codex_home="$(resolve_codex_home)"
+    runtime_peon_dir="${codex_home}/peon-ping"
+    mkdir -p "$runtime_peon_dir"
+
+    for entry in adapters packs scripts peon.sh relay.sh; do
+        if [ -e "${install_peon_dir}/${entry}" ]; then
+            ln -snf "${install_peon_dir}/${entry}" "${runtime_peon_dir}/${entry}"
+        fi
+    done
+
+    runtime_config="${runtime_peon_dir}/config.json"
+    install_config="${install_peon_dir}/config.json"
+    if [ ! -f "$runtime_config" ] && [ -f "$install_config" ]; then
+        cp "$install_config" "$runtime_config"
+    fi
+
+    printf '%s\n' "$runtime_peon_dir"
+}
+
+ensure_peon_mobile_pushover() {
+    peon_dir="${CLAUDE_PEON_DIR:-$(resolve_peon_dir)}"
+    peon_sh="${peon_dir}/peon.sh"
+    user_key="${PEON_MOBILE_PUSHOVER_USER_KEY:-}"
+    app_token="${PEON_MOBILE_PUSHOVER_APP_TOKEN:-}"
+
+    if [ -z "$user_key" ] && [ -z "$app_token" ]; then
+        return 0
+    fi
+    if [ -z "$user_key" ] || [ -z "$app_token" ]; then
+        printf '%s\n' "codexbox-launch: warning: Pushover mobile notifications require both PEON_MOBILE_PUSHOVER_USER_KEY and PEON_MOBILE_PUSHOVER_APP_TOKEN" >&2
+        return 0
+    fi
+    if [ ! -f "$peon_sh" ]; then
+        return 0
+    fi
+
+    config_path="${peon_dir}/config.json"
+
+    python3 - "$config_path" "$user_key" "$app_token" <<'PY'
+import json
+import pathlib
+import sys
+
+config_path = pathlib.Path(sys.argv[1])
+user_key = sys.argv[2]
+app_token = sys.argv[3]
+
+if config_path.exists():
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        config = {}
+else:
+    config = {}
+
+config["mobile_notify"] = {
+    "enabled": True,
+    "service": "pushover",
+    "user_key": user_key,
+    "app_token": app_token,
+}
+
+config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
 ensure_peon_codex_notify() {
-    peon_dir="${CLAUDE_PEON_DIR:-/usr/local/share/claude/hooks/peon-ping}"
+    peon_dir="${CLAUDE_PEON_DIR:-$(resolve_peon_dir)}"
     peon_sh="${peon_dir}/peon.sh"
     adapter="${peon_dir}/adapters/codex.sh"
 
@@ -34,11 +102,13 @@ ensure_peon_codex_notify() {
 
     python3 - "$config_path" "$adapter" <<'PY'
 import pathlib
+import re
 import sys
 
 config_path = pathlib.Path(sys.argv[1])
 adapter_path = sys.argv[2]
 notify_line = f'notify = ["bash", "{adapter_path}"]\n'
+codex_notify_pattern = re.compile(r'notify\s*=\s*\[\s*"bash"\s*,\s*".*/adapters/codex\.sh"\s*\]')
 
 if config_path.exists():
     content = config_path.read_text(encoding="utf-8")
@@ -86,7 +156,7 @@ for line in table_lines:
         if "]" in line:
             skip_table_notify_block = False
         continue
-    if stripped.strip() == notify_line.strip():
+    if stripped.strip() == notify_line.strip() or codex_notify_pattern.fullmatch(stripped.strip()):
         if "[" in line and "]" not in line:
             skip_table_notify_block = True
         continue
@@ -97,7 +167,7 @@ PY
 }
 
 run_peon_startup_check() {
-    peon_dir="${CLAUDE_PEON_DIR:-/usr/local/share/claude/hooks/peon-ping}"
+    peon_dir="${CLAUDE_PEON_DIR:-$(resolve_peon_dir)}"
     peon_sh="${peon_dir}/peon.sh"
 
     if [ ! -f "$peon_sh" ]; then
@@ -116,6 +186,9 @@ JSON
     return 0
 }
 
+CLAUDE_PEON_DIR="$(resolve_peon_dir)"
+export CLAUDE_PEON_DIR
+ensure_peon_mobile_pushover
 ensure_peon_codex_notify
 run_peon_startup_check
 exec "$@"

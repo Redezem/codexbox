@@ -7,7 +7,8 @@
 
 ## Project Overview
 - `codexbox` is a Go CLI that gives each project a persistent Docker or Podman container and runs OpenAI Codex inside it.
-- Default invocation runs `/usr/local/bin/codexbox-launch`, not `codex` directly. The launch wrapper bootstraps Codex notify integration for peon-ping and runs a peon-ping startup self-check before executing Codex.
+- Default invocation runs `/usr/local/bin/codexbox-launch`, not `codex` directly. The launch wrapper bootstraps Codex notify integration for peon-ping, optionally seeds Pushover mobile notification config from env, and runs a peon-ping startup self-check before executing Codex.
+- The launch wrapper stages a writable peon-ping runtime directory under `CODEX_HOME` and symlinks packaged assets into it so config/state changes work even when the image install path is read-only.
 - The base image is Fedora-based and installs Go, .NET, Rust, Node.js, Python, zsh, `task`, `mise`, `@openai/codex`, and peon-ping.
 - peon-ping is installed in the image under `/usr/local/share/claude/hooks/peon-ping`, and the default configured voice pack is `peasant`.
 - Project containers are long-lived and per-project. `codexbox` starts the container, runs the session, then stops the container without deleting it.
@@ -22,7 +23,6 @@
 - `internal/image/` builds the base image from embedded assets.
 - `internal/image/assets/Dockerfile` is the embedded image definition used by `codexbox image build`.
 - `internal/image/assets/codexbox-launch.sh` is the embedded startup wrapper copied into the image.
-- Root `Dockerfile` mirrors the embedded Dockerfile for direct/manual image work and must stay in sync with `internal/image/assets/Dockerfile`.
 - Tests live beside code in `*_test.go`.
 
 ## Build, Test, and Development Commands
@@ -47,23 +47,22 @@ Important workflow note:
 - `task image-build` and `task image-update` require `./codexbox` to exist first. Build the binary before using those tasks.
 
 ## Runtime Behavior
-- Default command path: `codexbox` -> container start -> `codexbox-launch` -> peon-ping config ensure -> peon-ping startup test -> `codex --dangerously-bypass-approvals-and-sandbox`.
+- Default command path: `codexbox` -> container start -> `codexbox-launch` -> peon-ping mobile config ensure -> peon-ping config ensure -> peon-ping startup test -> `codex --dangerously-bypass-approvals-and-sandbox`.
 - `--shell` bypasses the launch wrapper and starts `bash`.
 - `--cmd` bypasses the launch wrapper and runs `sh -lc <command>`.
 - Containers mount the project at `/workspace`.
 - Containers also mount host `~/.codex` to `/root/.codex`, even when the project workspace is read-only.
 - Shared per-project cache volumes are mounted for Go, Cargo, npm, and pip.
 - On Linux, the container is created with the host UID:GID to avoid root-owned files in the workspace.
-- Runtime environment forwards `OPENAI_API_KEY` and optional `OPENAI_BASE_URL` into the container when present.
+- Runtime environment forwards `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, and optional `PEON_MOBILE_PUSHOVER_USER_KEY` / `PEON_MOBILE_PUSHOVER_APP_TOKEN` into the container when present.
 - `REMOTE_CONTAINERS=true`, `CODEXBOX=true`, `CLAUDE_PEON_DIR`, and `CODEX_HOME` are injected into the container runtime.
 
 ## Image Build Sources
-- `codexbox image build` and `codexbox image update` do not build from the root `Dockerfile` directly.
+- `codexbox image build` and `codexbox image update` build from embedded assets, not from a repository-root `Dockerfile`.
 - The CLI embeds `internal/image/assets/Dockerfile` and `internal/image/assets/codexbox-launch.sh` with `go:embed`, writes them to a temp directory, and builds from that generated context.
 - If you update image behavior, you almost always need to touch:
   - `internal/image/assets/Dockerfile`
   - `internal/image/assets/codexbox-launch.sh` when startup behavior changes
-  - root `Dockerfile` to keep manual builds consistent
   - `internal/image/image_test.go` if wrapper behavior changes
 
 ## Coding Style & Naming Conventions
@@ -94,7 +93,7 @@ Important workflow note:
 
 ## Security & Configuration Tips
 - Never bake secrets into images or files.
-- Secrets belong in `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, or an env file passed with `--env-file`.
+- Secrets belong in `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, optional `PEON_MOBILE_PUSHOVER_USER_KEY` / `PEON_MOBILE_PUSHOVER_APP_TOKEN`, or an env file passed with `--env-file`.
 - If `.codex/` appears in a workspace, `codexbox init` adds it to `.gitignore`.
 - Docker or Podman is required to run the CLI and build images.
 
@@ -107,7 +106,7 @@ Important workflow note:
 - Read the nearest `*_test.go` file before changing a package.
 
 ### Safe Change Process
-- Start by locating the true source file. Do not assume the root `Dockerfile` is enough for image changes.
+- Start by locating the true source file. Image changes belong in `internal/image/assets/Dockerfile`, not in a repository-root `Dockerfile`.
 - Change implementation first.
 - Update tests for the affected package.
 - Update `AGENTS.md` and `README.md` if the behavior or workflow changed.
@@ -115,9 +114,9 @@ Important workflow note:
 - Keep diffs tight. This repo is small enough that broad refactors are rarely justified for a one-feature change.
 
 ### Common Pitfalls
-- `internal/image/assets/Dockerfile` is the image source for CLI builds. Editing only the root `Dockerfile` will not change `codexbox image build`.
-- The inverse is also a pitfall: editing only the embedded asset Dockerfile leaves the root `Dockerfile` stale for manual builds and review.
+- `internal/image/assets/Dockerfile` is the image source for CLI builds. If image behavior changes, that is the file to edit.
 - Default `codexbox` execution goes through `codexbox-launch`; `--shell` and `--cmd` do not. If a feature depends on the wrapper, document that scope clearly.
+- Pushover mobile notification seeding happens in `codexbox-launch`, so it applies to default `codexbox` runs and not to `--shell` / `--cmd` sessions unless the user configures peon-ping manually inside the container.
 - Launch script changes need shell-level care. The script runs under `/bin/sh`, so avoid Bash-only syntax there unless you intentionally invoke `bash` for a subprocess.
 - Registry operations are lock-sensitive. Reuse the existing lock helpers rather than adding unlocked reads or writes.
 - `task image-build` and `task image-update` call `./codexbox`, so they fail if the binary was not built first.
@@ -143,7 +142,7 @@ Important workflow note:
 - If you remove behavior, remove stale documentation in the same change. Do not leave “future cleanup” documentation debt behind.
 
 ### Review Checklist For Future Agents
-- Is the actual source file being edited, or only a mirror/generated copy?
+- Is the actual source file being edited, or only a generated temp copy?
 - Are tests updated where behavior changed?
 - Are `AGENTS.md` and `README.md` updated if the change affects users or maintainers?
 - Does the change preserve container lifecycle expectations?
@@ -183,4 +182,4 @@ Supported persistent flags:
 - Runtime defaults: default execution now uses Codex bypass mode instead of the earlier created-flag flow.
 - Registry safety: added a lock helper and applied it to list, remove, and rebase operations.
 - peon-ping integration: added peon-ping to the image, mounted Codex config into the container, added the `codexbox-launch` wrapper, and wired notify integration.
-- peon-ping launch hardening: launch script now inserts the top-level `notify` setting before the first TOML table, removes duplicate broken nested notify entries, sets the default voice pack to `peasant`, and performs a startup `SessionStart` self-check in test mode.
+- peon-ping launch hardening: launch script now inserts the top-level `notify` setting before the first TOML table, removes duplicate broken nested notify entries, seeds optional Pushover mobile notification config from env, sets the default voice pack to `peasant`, and performs a startup `SessionStart` self-check in test mode.

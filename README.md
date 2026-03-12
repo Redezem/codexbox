@@ -37,7 +37,8 @@ This gives you:
 - Resource limit flags
 - Optional per-directory or per-repo project scoping
 - peon-ping installed in the image with default voice pack `peasant`
-- Launch-time peon-ping notify bootstrap and startup self-check
+- Launch-time peon-ping notify bootstrap, optional Pushover mobile config, and startup self-check
+- peon-ping runtime state staged under mounted `CODEX_HOME` so settings persist without writing into the image
 
 ---
 
@@ -77,12 +78,12 @@ codexbox
 First run:
 
 - Creates the container
-- Runs `codexbox-launch`, which prepares peon-ping integration and then starts `codex`
+- Runs `codexbox-launch`, which prepares peon-ping integration, applies optional Pushover mobile notification config, and then starts `codex`
 
 Subsequent runs:
 
 - Starts the container
-- Runs `codexbox-launch`, which prepares peon-ping integration and then starts `codex`
+- Runs `codexbox-launch`, which prepares peon-ping integration, applies optional Pushover mobile notification config, and then starts `codex`
 
 When Codex exits, the container is stopped.
 
@@ -170,6 +171,8 @@ Update and rebuild image:
 codexbox image update
 ```
 
+These commands build from the embedded image assets in `internal/image/assets/`, not from a repository-root `Dockerfile`.
+
 The base image installs the latest Go and .NET SDK releases at build time and includes `zsh` and the `task` CLI.
 It also installs `@openai/codex`, peon-ping, and the `codexbox-launch` wrapper used for default sessions.
 
@@ -202,7 +205,12 @@ Codex API keys are never baked into images. They are passed via:
 
 - `OPENAI_API_KEY`
 - `OPENAI_BASE_URL` (optional)
+- `PEON_MOBILE_PUSHOVER_USER_KEY` (optional)
+- `PEON_MOBILE_PUSHOVER_APP_TOKEN` (optional)
 - `--env-file`
+
+If both `PEON_MOBILE_PUSHOVER_USER_KEY` and `PEON_MOBILE_PUSHOVER_APP_TOKEN` are present, `codexbox-launch` configures peon-ping mobile notifications for Pushover on session start. This applies on the default `codexbox` path; `--shell` and `--cmd` bypass the launch wrapper.
+The wrapper stages peon-ping's writable runtime config under the mounted `CODEX_HOME`, so the mobile notification config persists across long-lived containers.
 
 ---
 

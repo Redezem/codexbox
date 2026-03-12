@@ -34,9 +34,11 @@ type options struct {
 const defaultImageTag = "codexbox:latest"
 
 const (
-	containerCodexHome = "/root/.codex"
-	containerPeonDir   = "/usr/local/share/claude/hooks/peon-ping"
-	launchScriptPath   = "/usr/local/bin/codexbox-launch"
+	containerCodexHome         = "/root/.codex"
+	containerPeonDir           = "/usr/local/share/claude/hooks/peon-ping"
+	launchScriptPath           = "/usr/local/bin/codexbox-launch"
+	peonPushoverUserKeyEnvVar  = "PEON_MOBILE_PUSHOVER_USER_KEY"
+	peonPushoverAppTokenEnvVar = "PEON_MOBILE_PUSHOVER_APP_TOKEN"
 )
 
 func Execute() error {
@@ -229,7 +231,7 @@ func runDefault(cmd *cobra.Command, opts options) error {
 
 	execCmd := buildExecCommand(opts)
 
-	if err := engine.ExecInteractive(containerName, execCmd); err != nil {
+	if err := engine.ExecInteractive(containerName, containerEnv(), execCmd); err != nil {
 		_ = engine.StopContainer(containerName)
 		return err
 	}
@@ -295,12 +297,14 @@ func createContainer(engine docker.Engine, opts options, info project.Info) (reg
 
 func containerEnv() map[string]string {
 	return map[string]string{
-		"OPENAI_API_KEY":    os.Getenv("OPENAI_API_KEY"),
-		"OPENAI_BASE_URL":   os.Getenv("OPENAI_BASE_URL"),
-		"REMOTE_CONTAINERS": "true",
-		"CODEXBOX":          "true",
-		"CLAUDE_PEON_DIR":   containerPeonDir,
-		"CODEX_HOME":        containerCodexHome,
+		"OPENAI_API_KEY":           os.Getenv("OPENAI_API_KEY"),
+		"OPENAI_BASE_URL":          os.Getenv("OPENAI_BASE_URL"),
+		peonPushoverUserKeyEnvVar:  os.Getenv(peonPushoverUserKeyEnvVar),
+		peonPushoverAppTokenEnvVar: os.Getenv(peonPushoverAppTokenEnvVar),
+		"REMOTE_CONTAINERS":        "true",
+		"CODEXBOX":                 "true",
+		"CLAUDE_PEON_DIR":          containerPeonDir,
+		"CODEX_HOME":               containerCodexHome,
 	}
 }
 

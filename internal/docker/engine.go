@@ -153,8 +153,16 @@ func (e Engine) RemoveContainer(name string) error {
 	return e.run("rm", "-f", name)
 }
 
-func (e Engine) ExecInteractive(name string, cmd []string) error {
-	args := append([]string{"exec", "-it", name}, cmd...)
+func (e Engine) ExecInteractive(name string, env map[string]string, cmd []string) error {
+	args := []string{"exec", "-it"}
+	for k, v := range env {
+		if v == "" {
+			continue
+		}
+		args = append(args, "-e", k+"="+v)
+	}
+	args = append(args, name)
+	args = append(args, cmd...)
 	return e.run(args...)
 }
 
