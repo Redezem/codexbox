@@ -45,34 +45,54 @@ if config_path.exists():
 else:
     content = ""
 
-if "adapters/codex.sh" in content or "adapters/codex.ps1" in content:
-    raise SystemExit(0)
-
 lines = content.splitlines(keepends=True)
-updated = []
-replaced = False
-skip_notify_block = False
 
-for line in lines:
+first_table_index = next(
+    (index for index, line in enumerate(lines) if line.lstrip().startswith("[")),
+    len(lines),
+)
+root_lines = lines[:first_table_index]
+table_lines = lines[first_table_index:]
+
+updated_root = []
+replaced = False
+skip_root_notify_block = False
+
+for line in root_lines:
     stripped = line.lstrip()
-    if skip_notify_block:
+    if skip_root_notify_block:
         if "]" in line:
-            skip_notify_block = False
+            skip_root_notify_block = False
         continue
-    if not replaced and stripped.startswith("notify") and "=" in stripped:
-        replaced = True
-        updated.append(notify_line)
+    if stripped.startswith("notify") and "=" in stripped:
+        if not replaced:
+            updated_root.append(notify_line)
+            replaced = True
         if "[" in line and "]" not in line:
-            skip_notify_block = True
+            skip_root_notify_block = True
         continue
-    updated.append(line)
+    updated_root.append(line)
 
 if not replaced:
-    if updated and not updated[-1].endswith("\n"):
-        updated[-1] += "\n"
-    updated.append(notify_line)
+    if updated_root and not updated_root[-1].endswith("\n"):
+        updated_root[-1] += "\n"
+    updated_root.append(notify_line)
 
-config_path.write_text("".join(updated), encoding="utf-8")
+updated_table = []
+skip_table_notify_block = False
+for line in table_lines:
+    stripped = line.lstrip()
+    if skip_table_notify_block:
+        if "]" in line:
+            skip_table_notify_block = False
+        continue
+    if stripped.strip() == notify_line.strip():
+        if "[" in line and "]" not in line:
+            skip_table_notify_block = True
+        continue
+    updated_table.append(line)
+
+config_path.write_text("".join(updated_root + updated_table), encoding="utf-8")
 PY
 }
 
