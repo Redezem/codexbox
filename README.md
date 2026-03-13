@@ -38,7 +38,7 @@ This gives you:
 - Optional per-directory or per-repo project scoping
 - peon-ping installed in the image with default voice pack `peasant`
 - Launch-time peon-ping notify bootstrap, optional Pushover mobile config, and startup self-check
-- peon-ping runtime state staged under mounted `CODEX_HOME` so settings persist without writing into the image
+- peon-ping runtime state staged under mounted `CODEX_HOME`, with a runtime `peon.sh` shim so relay-backed sounds keep using container-safe relative paths
 
 ---
 
@@ -210,7 +210,7 @@ Codex API keys are never baked into images. They are passed via:
 - `--env-file`
 
 If both `PEON_MOBILE_PUSHOVER_USER_KEY` and `PEON_MOBILE_PUSHOVER_APP_TOKEN` are present, `codexbox-launch` configures peon-ping mobile notifications for Pushover on session start. This applies on the default `codexbox` path; `--shell` and `--cmd` bypass the launch wrapper.
-The wrapper stages peon-ping's writable runtime config under the mounted `CODEX_HOME`, so the mobile notification config persists across long-lived containers.
+The wrapper stages peon-ping's writable runtime config under the mounted `CODEX_HOME`, and writes a runtime `peon.sh` shim so relay-backed sounds keep using relative paths that peon-ping's relay accepts. The mobile notification config therefore persists across long-lived containers without breaking relay playback.
 
 ---
 

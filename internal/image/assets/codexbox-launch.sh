@@ -19,11 +19,13 @@ resolve_peon_dir() {
     runtime_peon_dir="${codex_home}/peon-ping"
     mkdir -p "$runtime_peon_dir"
 
-    for entry in adapters packs scripts peon.sh relay.sh; do
+    for entry in adapters packs scripts relay.sh; do
         if [ -e "${install_peon_dir}/${entry}" ]; then
             ln -snf "${install_peon_dir}/${entry}" "${runtime_peon_dir}/${entry}"
         fi
     done
+
+    stage_runtime_peon_sh "$install_peon_dir" "$runtime_peon_dir"
 
     runtime_config="${runtime_peon_dir}/config.json"
     install_config="${install_peon_dir}/config.json"
@@ -32,6 +34,63 @@ resolve_peon_dir() {
     fi
 
     printf '%s\n' "$runtime_peon_dir"
+}
+
+stage_runtime_peon_sh() {
+    install_peon_dir="$1"
+    runtime_peon_dir="$2"
+    install_peon_sh="${install_peon_dir}/peon.sh"
+    runtime_peon_sh="${runtime_peon_dir}/peon.sh"
+
+    if [ ! -f "$install_peon_sh" ]; then
+        return 0
+    fi
+
+    python3 - "$install_peon_sh" "$runtime_peon_sh" <<'PY'
+import pathlib
+import sys
+
+install_path = pathlib.Path(sys.argv[1])
+runtime_path = pathlib.Path(sys.argv[2])
+content = install_path.read_text(encoding="utf-8")
+
+old_line = '      local rel_path="${file#$PEON_DIR/}"\n'
+new_line = '      local rel_path\n      rel_path="$(relay_relative_path "$file")"\n'
+helper_marker = "relay_relative_path() {\n"
+helper_block = """relay_relative_path() {
+  local file="$1"
+
+  if [ "${file#$PEON_DIR/}" != "$file" ]; then
+    printf '%s\\n' "${file#$PEON_DIR/}"
+    return 0
+  fi
+
+  local entry real_entry
+  for entry in "$PEON_DIR"/*; do
+    [ -L "$entry" ] || continue
+    real_entry=$(readlink -f "$entry" 2>/dev/null || true)
+    [ -n "$real_entry" ] || continue
+    if [ "${file#$real_entry/}" != "$file" ]; then
+      printf '%s/%s\\n' "$(basename "$entry")" "${file#$real_entry/}"
+      return 0
+    fi
+  done
+
+  printf '%s\\n' "$file"
+}
+
+"""
+
+if old_line in content:
+    if helper_marker not in content:
+        anchor = "# --- Platform-aware audio playback ---\n"
+        if anchor in content:
+            content = content.replace(anchor, helper_block + anchor, 1)
+    content = content.replace(old_line, new_line, 1)
+
+runtime_path.write_text(content, encoding="utf-8")
+runtime_path.chmod(install_path.stat().st_mode)
+PY
 }
 
 ensure_peon_mobile_pushover() {

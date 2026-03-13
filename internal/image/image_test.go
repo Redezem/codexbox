@@ -280,7 +280,7 @@ func TestLaunchScriptConfigBootstrap(t *testing.T) {
 		}
 	})
 
-	t.Run("creates runtime peon dir with linked assets", func(t *testing.T) {
+	t.Run("creates runtime peon dir with staged assets", func(t *testing.T) {
 		dir := t.TempDir()
 		scriptPath := writeLaunchScript(t, dir)
 		peonDir := filepath.Join(dir, "peon")
@@ -295,7 +295,24 @@ func TestLaunchScriptConfigBootstrap(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(peonDir, "scripts"), 0o755); err != nil {
 			t.Fatalf("mkdir scripts: %v", err)
 		}
-		if err := os.WriteFile(peonShPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		peonScript := `#!/bin/bash
+set -uo pipefail
+
+# --- Platform-aware audio playback ---
+play_sound() {
+  local file="$1" vol="$2"
+  case "$PLATFORM" in
+    devcontainer|ssh)
+      local rel_path="${file#$PEON_DIR/}"
+      local encoded_path
+      encoded_path="$rel_path"
+      ;;
+  esac
+}
+
+exit 0
+`
+		if err := os.WriteFile(peonShPath, []byte(peonScript), 0o755); err != nil {
 			t.Fatalf("write peon.sh: %v", err)
 		}
 		if err := os.WriteFile(adapterPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
@@ -328,6 +345,31 @@ func TestLaunchScriptConfigBootstrap(t *testing.T) {
 		if adaptersInfo.Mode()&os.ModeSymlink == 0 {
 			t.Fatalf("runtime adapters should be a symlink, mode=%v", adaptersInfo.Mode())
 		}
+		packsInfo, err := os.Lstat(filepath.Join(runtimePeonDir, "packs"))
+		if err != nil {
+			t.Fatalf("runtime packs symlink missing: %v", err)
+		}
+		if packsInfo.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("runtime packs should be a symlink, mode=%v", packsInfo.Mode())
+		}
+		peonInfo, err := os.Lstat(filepath.Join(runtimePeonDir, "peon.sh"))
+		if err != nil {
+			t.Fatalf("runtime peon.sh missing: %v", err)
+		}
+		if peonInfo.Mode()&os.ModeSymlink != 0 {
+			t.Fatalf("runtime peon.sh should be a regular file, mode=%v", peonInfo.Mode())
+		}
+		runtimePeon, err := os.ReadFile(filepath.Join(runtimePeonDir, "peon.sh"))
+		if err != nil {
+			t.Fatalf("read runtime peon.sh: %v", err)
+		}
+		runtimePeonText := string(runtimePeon)
+		if !strings.Contains(runtimePeonText, "relay_relative_path() {") {
+			t.Fatalf("runtime peon.sh missing relay path helper: %q", runtimePeonText)
+		}
+		if !strings.Contains(runtimePeonText, `rel_path="$(relay_relative_path "$file")"`) {
+			t.Fatalf("runtime peon.sh missing relay path rewrite: %q", runtimePeonText)
+		}
 	})
 }
 
@@ -345,7 +387,17 @@ func runLaunchScript(t *testing.T, scriptPath, codexHome, peonDir string, extraE
 	t.Helper()
 
 	cmd := exec.Command("sh", scriptPath, "true")
-	cmd.Env = append(os.Environ(),
+	env := make([]string, 0, len(os.Environ())+len(extraEnv)+3)
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "PEON_MOBILE_PUSHOVER_USER_KEY=") {
+			continue
+		}
+		if strings.HasPrefix(entry, "PEON_MOBILE_PUSHOVER_APP_TOKEN=") {
+			continue
+		}
+		env = append(env, entry)
+	}
+	cmd.Env = append(env,
 		"CODEX_HOME="+codexHome,
 		"CLAUDE_PEON_DIR="+peonDir,
 		"HOME="+filepath.Dir(codexHome),
