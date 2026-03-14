@@ -1,20 +1,24 @@
+<p align="center">
+  <img src="assets/Codexbox_banner.png" alt="codexbox" />
+</p>
+
 # codexbox
 
-**codexbox** is a Go CLI that gives you a per-project, persistent, container-backed sandbox for running the OpenAI Codex CLI alongside a full developer toolchain (Go, Rust, Node, Python, C/C++).
+**codexbox** is a Go CLI that gives you a per-project, persistent, container-backed environment for running the OpenAI Codex CLI alongside a full developer toolchain (Go, Rust, Node, Python, C/C++, .NET).
 
-Each project directory gets its own long-lived container. When you run `codexbox` inside a project, it:
+Each detected project gets its own long-lived container. By default, a git repo shares one container rooted at the repo top level; outside git, the current directory is the project root. When you run `codexbox`, it:
 
-1. Mounts the current directory into the container at `/workspace`
+1. Mounts the detected project root into the container at `/workspace`
 2. Starts (or resumes) the project container
-3. Runs `codex` inside it through a small launch wrapper
+3. Runs `codex` inside it through a small launch wrapper by default
 4. Stops the container when Codex exits (but does not delete it)
 
-The next time you run `codexbox` in the same directory, it reuses the same container and starts a new Codex session in that persistent environment.
+The next time you run `codexbox` for the same detected project, it reuses the same container and starts a new Codex process in that persistent environment.
 
 This gives you:
 
 - Reproducible toolchains per project
-- Persistent Codex sessions
+- Persistent per-project environments
 - Clean separation between projects
 - No host pollution
 - A consistent Fedora dev environment everywhere
@@ -30,8 +34,8 @@ This gives you:
 - Reuse the same persistent container across runs
 - Image versioning and upgrade path
 - Project listing and deletion
-- Destructive rebase to the newest image
-- Shared language cache volumes (Go, Cargo, npm, pip)
+- Destructive rebase using the configured image tag
+- Persistent per-project language cache volumes (Go, Cargo, npm, pip)
 - UID/GID mapping to avoid root-owned files
 - Safe secret handling (env or env-file)
 - Resource limit flags
@@ -65,11 +69,19 @@ task image-update
 task clean
 ```
 
+`task image-build` and `task image-update` run `./codexbox`, so build the binary first with `task build` or `go build -o codexbox ./cmd/codexbox`.
+
 ---
 
 ## Basic Usage
 
-Inside any project directory:
+Build the base image first:
+
+```bash
+codexbox image build
+```
+
+Then start Codex inside the current project:
 
 ```bash
 codexbox
@@ -99,10 +111,10 @@ Run or resume a Codex sandbox for the current project.
 Commands:
   list               List project containers
   rm <project>       Remove a project container
-  rebase <project>   Recreate project container using latest image
+  rebase [project]   Recreate project container using the configured image tag
   init               Add .codex to .gitignore
-  doctor             Check docker + environment
-  config             Show configuration paths
+  doctor             Show container engine version information
+  config             Show registry path
   status             Show status of current project container
 
   image build        Build base image
@@ -127,6 +139,8 @@ Commands:
   --no-gpu
 ```
 
+`--no-gpu` is currently accepted by the CLI but has no effect on container creation or execution.
+
 ---
 
 ## Managing Projects
@@ -143,7 +157,7 @@ Delete a project container:
 codexbox rm <project>
 ```
 
-Recreate a project using the latest base image (defaults to the current project if omitted):
+Recreate a project container using the configured image tag (defaults to the current project if omitted):
 
 ```bash
 codexbox rebase [project]
@@ -178,7 +192,7 @@ It also installs `@openai/codex`, peon-ping, and the `codexbox-launch` wrapper u
 
 `image update` pulls the latest base layers and rebuilds without using build cache.
 
-New projects will use the new image automatically.
+New containers created with that tag will use the rebuilt image automatically. Existing project containers keep their current container until you recreate them with `codexbox rebase` or `codexbox --fresh`.
 
 ---
 
@@ -216,14 +230,14 @@ The wrapper stages peon-ping's writable runtime config under the mounted `CODEX_
 
 ## Caches
 
-Shared container volumes are used for:
+Persistent per-project container volumes are used for:
 
 - Go modules
 - Cargo registry and git
 - npm cache
 - pip cache
 
-This keeps builds fast across projects.
+This keeps repeated installs and builds fast within the same project container.
 
 ---
 
@@ -231,7 +245,7 @@ This keeps builds fast across projects.
 
 On Linux, containers run with your UID/GID so files in the workspace are not owned by root.
 
-On macOS this is less critical but still supported.
+The current implementation only sets explicit UID/GID mapping on Linux.
 
 ---
 
