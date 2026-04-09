@@ -1,6 +1,12 @@
 package cli
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"codexbox/internal/project"
+)
 
 func TestBuildExecCommand(t *testing.T) {
 	t.Run("default uses launch wrapper", func(t *testing.T) {
@@ -65,5 +71,47 @@ func TestContainerEnvIncludesOptionalPeonMobilePushoverVars(t *testing.T) {
 	}
 	if env[peonPushoverAppTokenEnvVar] != "app-token" {
 		t.Fatalf("%s = %q", peonPushoverAppTokenEnvVar, env[peonPushoverAppTokenEnvVar])
+	}
+}
+
+func TestContainerMountsIncludeDockerSocketWhenRequested(t *testing.T) {
+	info := project.Info{ID: "proj-123", Root: "/workspace-src"}
+	mounts := containerMounts(info, "/home/tester", false, true)
+
+	foundSocket := false
+	for _, m := range mounts {
+		if m.Source == hostDockerSocketPath && m.Target == hostDockerSocketPath {
+			foundSocket = true
+			break
+		}
+	}
+	if !foundSocket {
+		t.Fatalf("expected docker socket mount in %#v", mounts)
+	}
+}
+
+func TestContainerMountsOmitDockerSocketWhenUnavailable(t *testing.T) {
+	info := project.Info{ID: "proj-123", Root: "/workspace-src"}
+	mounts := containerMounts(info, "/home/tester", false, false)
+
+	for _, m := range mounts {
+		if m.Source == hostDockerSocketPath || m.Target == hostDockerSocketPath {
+			t.Fatalf("did not expect docker socket mount in %#v", mounts)
+		}
+	}
+}
+
+func TestPathExists(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "exists.txt")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	if !pathExists(file) {
+		t.Fatalf("expected existing path to return true")
+	}
+	if pathExists(filepath.Join(dir, "missing.txt")) {
+		t.Fatalf("expected missing path to return false")
 	}
 }

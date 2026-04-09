@@ -14,6 +14,14 @@ func TestDockerfileInstallsBubblewrap(t *testing.T) {
 	}
 }
 
+func TestDockerfileInstallsDockerTooling(t *testing.T) {
+	for _, pkg := range []string{"docker-cli", "docker-buildx", "docker-compose"} {
+		if !strings.Contains(dockerfile, pkg) {
+			t.Fatalf("embedded Dockerfile should install %s", pkg)
+		}
+	}
+}
+
 func TestLaunchScriptConfigBootstrap(t *testing.T) {
 	t.Run("creates notify config when missing", func(t *testing.T) {
 		dir := t.TempDir()

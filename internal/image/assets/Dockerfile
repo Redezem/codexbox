@@ -10,6 +10,7 @@ RUN dnf -y update && dnf -y install \
     gcc gcc-c++ clang lld make cmake ninja-build pkgconf-pkg-config gdb \
     python3 python3-pip python3-virtualenv \
     nodejs npm zsh bubblewrap \
+    docker-cli docker-buildx docker-compose \
     && dnf clean all
 
 RUN python3 - <<'PY' >/tmp/go-version

@@ -36,7 +36,9 @@ const defaultImageTag = "codexbox:latest"
 const (
 	containerCodexHome         = "/root/.codex"
 	containerPeonDir           = "/usr/local/share/claude/hooks/peon-ping"
+	hostDockerSocketPath       = "/var/run/docker.sock"
 	launchScriptPath           = "/usr/local/bin/codexbox-launch"
+	dockerSocketWarning        = "codexbox: warning: Unable to pass through docker socket, docker capabilities may not function"
 	peonPushoverUserKeyEnvVar  = "PEON_MOBILE_PUSHOVER_USER_KEY"
 	peonPushoverAppTokenEnvVar = "PEON_MOBILE_PUSHOVER_APP_TOKEN"
 )
@@ -147,6 +149,10 @@ func runDefault(cmd *cobra.Command, opts options) error {
 	if !imageExists {
 		return fmt.Errorf("image not found: %s (run `codexbox image build` first)", opts.ImageTag)
 	}
+	dockerSocketAvailable := pathExists(hostDockerSocketPath)
+	if !dockerSocketAvailable {
+		fmt.Fprintln(cmd.ErrOrStderr(), dockerSocketWarning)
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -196,7 +202,7 @@ func runDefault(cmd *cobra.Command, opts options) error {
 	}
 
 	if !exists {
-		entry, err := createContainer(engine, opts, info)
+		entry, err := createContainer(engine, opts, info, dockerSocketAvailable)
 		if err != nil {
 			return err
 		}
@@ -249,19 +255,12 @@ func buildExecCommand(opts options) []string {
 	}
 }
 
-func createContainer(engine docker.Engine, opts options, info project.Info) (registry.Entry, error) {
+func createContainer(engine docker.Engine, opts options, info project.Info, includeDockerSocket bool) (registry.Entry, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return registry.Entry{}, err
 	}
-	mounts := []docker.Mount{
-		{Source: info.Root, Target: "/workspace", Readonly: opts.Readonly},
-		{Source: project.VolumeName(info.ID, "go"), Target: "/go/pkg/mod"},
-		{Source: project.VolumeName(info.ID, "cargo"), Target: "/root/.cargo"},
-		{Source: project.VolumeName(info.ID, "npm"), Target: "/root/.npm"},
-		{Source: project.VolumeName(info.ID, "pip"), Target: "/root/.cache/pip"},
-		{Source: filepath.Join(home, ".codex"), Target: "/root/.codex"},
-	}
+	mounts := containerMounts(info, home, opts.Readonly, includeDockerSocket)
 	labels := map[string]string{
 		"com.codexbox.project_id": info.ID,
 		"com.codexbox.path":       info.Root,
@@ -293,6 +292,26 @@ func createContainer(engine docker.Engine, opts options, info project.Info) (reg
 		CreatedAt: time.Now().UTC(),
 		LastUsed:  time.Now().UTC(),
 	}, nil
+}
+
+func containerMounts(info project.Info, home string, readonly, includeDockerSocket bool) []docker.Mount {
+	mounts := []docker.Mount{
+		{Source: info.Root, Target: "/workspace", Readonly: readonly},
+		{Source: project.VolumeName(info.ID, "go"), Target: "/go/pkg/mod"},
+		{Source: project.VolumeName(info.ID, "cargo"), Target: "/root/.cargo"},
+		{Source: project.VolumeName(info.ID, "npm"), Target: "/root/.npm"},
+		{Source: project.VolumeName(info.ID, "pip"), Target: "/root/.cache/pip"},
+		{Source: filepath.Join(home, ".codex"), Target: "/root/.codex"},
+	}
+	if includeDockerSocket {
+		mounts = append(mounts, docker.Mount{Source: hostDockerSocketPath, Target: hostDockerSocketPath})
+	}
+	return mounts
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func containerEnv() map[string]string {
@@ -435,7 +454,7 @@ func newRebaseCmd(opts options) *cobra.Command {
 			}
 
 			info := project.Info{ID: id, Root: entry.Path}
-			newEntry, err := createContainer(engine, opts, info)
+			newEntry, err := createContainer(engine, opts, info, pathExists(hostDockerSocketPath))
 			if err != nil {
 				return err
 			}

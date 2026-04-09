@@ -9,7 +9,7 @@
 - `codexbox` is a Go CLI that gives each project a persistent Docker or Podman container and runs OpenAI Codex inside it.
 - Default invocation runs `/usr/local/bin/codexbox-launch`, not `codex` directly. The launch wrapper bootstraps Codex notify integration for peon-ping, optionally seeds Pushover mobile notification config from env, and runs a peon-ping startup self-check before executing Codex.
 - The launch wrapper stages a writable peon-ping runtime directory under `CODEX_HOME`, symlinks packaged assets into it, and writes a runtime `peon.sh` copy with a relay-path compatibility patch so config/state changes work even when the image install path is read-only.
-- The base image is Fedora-based and installs Go, .NET, Rust, Node.js, Python, zsh, `bubblewrap` (`/usr/bin/bwrap`), `task`, `mise`, `@openai/codex`, and peon-ping.
+- The base image is Fedora-based and installs Go, .NET, Rust, Node.js, Python, zsh, `bubblewrap` (`/usr/bin/bwrap`), Docker CLI tooling (`docker`, `docker buildx`, `docker compose`), `task`, `mise`, `@openai/codex`, and peon-ping.
 - peon-ping is installed in the image under `/usr/local/share/claude/hooks/peon-ping`, and the default configured voice pack is `peasant`.
 - Project containers are long-lived and per-project. `codexbox` starts the container, runs the session, then stops the container without deleting it.
 
@@ -53,6 +53,8 @@ Important workflow note:
 - Containers mount the project at `/workspace`.
 - Containers also mount host `~/.codex` to `/root/.codex`, even when the project workspace is read-only.
 - Shared per-project cache volumes are mounted for Go, Cargo, npm, and pip.
+- New container creation also mounts host `/var/run/docker.sock` into the container at the same path when the host socket exists.
+- When host `/var/run/docker.sock` is missing, `codexbox` prints a non-fatal warning: `codexbox: warning: Unable to pass through docker socket, docker capabilities may not function`.
 - On Linux, the container is created with the host UID:GID to avoid root-owned files in the workspace.
 - Runtime environment forwards `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, and optional `PEON_MOBILE_PUSHOVER_USER_KEY` / `PEON_MOBILE_PUSHOVER_APP_TOKEN` into the container when present.
 - `REMOTE_CONTAINERS=true`, `CODEXBOX=true`, `CLAUDE_PEON_DIR`, and `CODEX_HOME` are injected into the container runtime.
@@ -124,6 +126,7 @@ Important workflow note:
 - `rm` expects a project ID, not a filesystem path.
 - `rebase [project]` requires the project to exist in the registry first.
 - Container creation mounts the host `~/.codex`; if you change `CODEX_HOME` behavior, review both mount logic and launch script config resolution.
+- Existing containers do not gain new mounts automatically. Recreate with `codexbox --fresh` or `codexbox rebase` when mount behavior changes.
 - Linux containers run as the host UID:GID. Any change that assumes root in the workspace can break real usage.
 - peon-ping config has evolved. Upstream now uses `default_pack`, with `active_pack` as a legacy compatibility concern. Do not reintroduce stale assumptions.
 - peon-ping startup validation in `codexbox-launch` is intentionally non-fatal. Keep that property unless there is a strong product reason to block startup.
@@ -183,3 +186,4 @@ Supported persistent flags:
 - Registry safety: added a lock helper and applied it to list, remove, and rebase operations.
 - peon-ping integration: added peon-ping to the image, mounted Codex config into the container, added the `codexbox-launch` wrapper, and wired notify integration.
 - peon-ping launch hardening: launch script now inserts the top-level `notify` setting before the first TOML table, removes duplicate broken nested notify entries, seeds optional Pushover mobile notification config from env, sets the default voice pack to `peasant`, and performs a startup `SessionStart` self-check in test mode.
+- Docker client support: image now includes `docker`, buildx, and compose plugins; new containers mount `/var/run/docker.sock` when present and emit a warning when unavailable.

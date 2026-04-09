@@ -4,7 +4,7 @@
 
 # codexbox
 
-**codexbox** is a Go CLI that gives you a per-project, persistent, container-backed environment for running the OpenAI Codex CLI alongside a full developer toolchain (Go, Rust, Node, Python, C/C++, .NET, bubblewrap).
+**codexbox** is a Go CLI that gives you a per-project, persistent, container-backed environment for running the OpenAI Codex CLI alongside a full developer toolchain (Go, Rust, Node, Python, C/C++, .NET, bubblewrap, Docker CLI).
 
 Each detected project gets its own long-lived container. By default, a git repo shares one container rooted at the repo top level; outside git, the current directory is the project root. When you run `codexbox`, it:
 
@@ -28,7 +28,7 @@ This gives you:
 
 ## Features
 
-- Fedora-based image with latest Go and .NET SDK, Rust (rustup), Node.js, Python, zsh, `bubblewrap` (`/usr/bin/bwrap`), go-task, `mise`, and C/C++ toolchain
+- Fedora-based image with latest Go and .NET SDK, Rust (rustup), Node.js, Python, zsh, `bubblewrap` (`/usr/bin/bwrap`), Docker CLI (`docker`, `docker buildx`, `docker compose`), go-task, `mise`, and C/C++ toolchain
 - Per-project persistent containers
 - Automatic project detection from directory or git repo
 - Reuse the same persistent container across runs
@@ -36,6 +36,7 @@ This gives you:
 - Project listing and deletion
 - Destructive rebase using the configured image tag
 - Persistent per-project language cache volumes (Go, Cargo, npm, pip)
+- Host Docker socket passthrough for new containers when `/var/run/docker.sock` exists
 - UID/GID mapping to avoid root-owned files
 - Safe secret handling (env or env-file)
 - Resource limit flags
@@ -91,11 +92,13 @@ First run:
 
 - Creates the container
 - Runs `codexbox-launch`, which prepares peon-ping integration, applies optional Pushover mobile notification config, and then starts `codex`
+- Warns if host `/var/run/docker.sock` is unavailable: `codexbox: warning: Unable to pass through docker socket, docker capabilities may not function`
 
 Subsequent runs:
 
 - Starts the container
 - Runs `codexbox-launch`, which prepares peon-ping integration, applies optional Pushover mobile notification config, and then starts `codex`
+- Warns if host `/var/run/docker.sock` is unavailable: `codexbox: warning: Unable to pass through docker socket, docker capabilities may not function`
 
 When Codex exits, the container is stopped.
 
@@ -187,12 +190,13 @@ codexbox image update
 
 These commands build from the embedded image assets in `internal/image/assets/`, not from a repository-root `Dockerfile`.
 
-The base image installs the latest Go and .NET SDK releases at build time and includes `zsh`, `bubblewrap` (`/usr/bin/bwrap`), and the `task` CLI.
+The base image installs the latest Go and .NET SDK releases at build time and includes `zsh`, `bubblewrap` (`/usr/bin/bwrap`), Docker CLI tooling (`docker`, buildx, compose), and the `task` CLI.
 It also installs `@openai/codex`, peon-ping, and the `codexbox-launch` wrapper used for default sessions.
 
 `image update` pulls the latest base layers and rebuilds without using build cache.
 
 New containers created with that tag will use the rebuilt image automatically. Existing project containers keep their current container until you recreate them with `codexbox rebase` or `codexbox --fresh`.
+This also applies to socket mount updates such as Docker socket passthrough.
 
 ---
 
