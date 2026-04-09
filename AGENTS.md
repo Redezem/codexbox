@@ -9,7 +9,7 @@
 - `codexbox` is a Go CLI that gives each project a persistent Docker or Podman container and runs OpenAI Codex inside it.
 - Default invocation runs `/usr/local/bin/codexbox-launch`, not `codex` directly. The launch wrapper bootstraps Codex notify integration for peon-ping, optionally seeds Pushover mobile notification config from env, and runs a peon-ping startup self-check before executing Codex.
 - The launch wrapper stages a writable peon-ping runtime directory under `CODEX_HOME`, symlinks packaged assets into it, and writes a runtime `peon.sh` copy with a relay-path compatibility patch so config/state changes work even when the image install path is read-only.
-- The base image is Fedora-based and installs Go, .NET, Rust, Node.js, Python, zsh, `task`, `mise`, `@openai/codex`, and peon-ping.
+- The base image is Fedora-based and installs Go, .NET, Rust, Node.js, Python, zsh, `bubblewrap` (`/usr/bin/bwrap`), `task`, `mise`, `@openai/codex`, and peon-ping.
 - peon-ping is installed in the image under `/usr/local/share/claude/hooks/peon-ping`, and the default configured voice pack is `peasant`.
 - Project containers are long-lived and per-project. `codexbox` starts the container, runs the session, then stops the container without deleting it.
 
@@ -178,7 +178,7 @@ Supported persistent flags:
 ## Summarized Changelog
 - Initial project: introduced the `codexbox` CLI, project detection, container lifecycle, and registry persistence.
 - Project identity and caching: added stable project IDs, shared per-project cache volumes, and image embedding support.
-- Image improvements: switched to dynamic Go installation, added `task`, added .NET SDK and `zsh`, and updated the Fedora base images.
+- Image improvements: switched to dynamic Go installation, added `task`, added .NET SDK, `zsh`, and `bubblewrap`, and updated the Fedora base images.
 - Runtime defaults: default execution now uses Codex bypass mode instead of the earlier created-flag flow.
 - Registry safety: added a lock helper and applied it to list, remove, and rebase operations.
 - peon-ping integration: added peon-ping to the image, mounted Codex config into the container, added the `codexbox-launch` wrapper, and wired notify integration.

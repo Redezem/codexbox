@@ -8,6 +8,12 @@ import (
 	"testing"
 )
 
+func TestDockerfileInstallsBubblewrap(t *testing.T) {
+	if !strings.Contains(dockerfile, "bubblewrap") {
+		t.Fatalf("embedded Dockerfile should install bubblewrap")
+	}
+}
+
 func TestLaunchScriptConfigBootstrap(t *testing.T) {
 	t.Run("creates notify config when missing", func(t *testing.T) {
 		dir := t.TempDir()
