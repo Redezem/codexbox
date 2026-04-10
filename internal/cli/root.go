@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,43 +173,29 @@ func runDefault(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return err
 	}
-	lockPath := regPath + ".lock"
-	l, err := lock.Acquire(lockPath)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if l != nil {
-			_ = l.Release()
-		}
-	}()
-
-	reg, err := registry.Load(regPath)
-	if err != nil {
-		return err
-	}
-	if reg.Entries == nil {
-		reg.Entries = map[string]registry.Entry{}
-	}
 
 	exists, err := engine.ContainerExists(containerName)
 	if err != nil {
 		return err
 	}
-	if opts.Fresh && exists {
-		if err := engine.RemoveContainer(containerName); err != nil {
-			return err
-		}
-		exists = false
-	}
 
-	if !exists {
-		entry, err := createContainer(engine, opts, info, dockerSocketAvailable)
+	shouldRecreate := opts.Fresh || !exists
+	if exists && !opts.Fresh {
+		needsRebase, err := containerNeedsRebase(engine, containerName, opts.ImageTag)
 		if err != nil {
 			return err
 		}
-		reg.Entries[info.ID] = entry
-		if err := registry.Save(regPath, reg); err != nil {
+		if needsRebase && isInteractiveSession(cmd.InOrStdin(), cmd.ErrOrStderr()) {
+			rebase, err := promptForImageRebase(cmd.InOrStdin(), cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			shouldRecreate = rebase
+		}
+	}
+
+	if shouldRecreate {
+		if _, err := recreateProjectContainer(engine, opts, info, dockerSocketAvailable, regPath); err != nil {
 			return err
 		}
 	}
@@ -215,25 +203,9 @@ func runDefault(cmd *cobra.Command, opts options) error {
 	if err := engine.StartContainer(containerName); err != nil {
 		return err
 	}
-	now := time.Now().UTC()
-	entry, ok := reg.Entries[info.ID]
-	if !ok {
-		entry = registry.Entry{
-			ID:        info.ID,
-			Path:      info.Root,
-			ImageTag:  opts.ImageTag,
-			CreatedAt: now,
-		}
-	}
-	entry.LastUsed = now
-	reg.Entries[info.ID] = entry
-	if err := registry.Save(regPath, reg); err != nil {
+	if err := touchRegistryEntry(regPath, info, opts.ImageTag); err != nil {
 		return err
 	}
-	if err := l.Release(); err != nil {
-		return err
-	}
-	l = nil
 
 	execCmd := buildExecCommand(opts)
 
@@ -242,6 +214,73 @@ func runDefault(cmd *cobra.Command, opts options) error {
 		return err
 	}
 	return engine.StopContainer(containerName)
+}
+
+func imageIDsDiffer(containerImageID, latestImageID string) bool {
+	containerImageID = strings.TrimSpace(containerImageID)
+	latestImageID = strings.TrimSpace(latestImageID)
+	return containerImageID != "" && latestImageID != "" && containerImageID != latestImageID
+}
+
+func containerNeedsRebase(engine docker.Engine, containerName, imageTag string) (bool, error) {
+	containerImageID, err := engine.ContainerImageID(containerName)
+	if err != nil {
+		return false, err
+	}
+	latestImageID, err := engine.ImageID(imageTag)
+	if err != nil {
+		return false, err
+	}
+	return imageIDsDiffer(containerImageID, latestImageID), nil
+}
+
+func isInteractiveSession(in io.Reader, out io.Writer) bool {
+	return isInteractiveStream(in) && isInteractiveStream(out)
+}
+
+func isInteractiveStream(stream any) bool {
+	file, ok := stream.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func parsePromptDefaultYes(input string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(input)) {
+	case "", "y", "yes":
+		return true, true
+	case "n", "no":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+func promptForImageRebase(in io.Reader, out io.Writer) (bool, error) {
+	reader := bufio.NewReader(in)
+	for {
+		if _, err := fmt.Fprint(out, "A new Codexbox image exists, do you want to rebase? (Y/n) "); err != nil {
+			return false, err
+		}
+		line, err := reader.ReadString('\n')
+		if answer, ok := parsePromptDefaultYes(line); ok {
+			return answer, nil
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return false, fmt.Errorf("invalid prompt response: %q", strings.TrimSpace(line))
+			}
+			return false, err
+		}
+		if _, err := fmt.Fprintln(out, "Please enter y or n."); err != nil {
+			return false, err
+		}
+	}
 }
 
 func buildExecCommand(opts options) []string {
@@ -292,6 +331,87 @@ func createContainer(engine docker.Engine, opts options, info project.Info, incl
 		CreatedAt: time.Now().UTC(),
 		LastUsed:  time.Now().UTC(),
 	}, nil
+}
+
+func removeContainerIfExists(engine docker.Engine, name string) error {
+	exists, err := engine.ContainerExists(name)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	return engine.RemoveContainer(name)
+}
+
+func recreateProjectContainer(engine docker.Engine, opts options, info project.Info, includeDockerSocket bool, regPath string) (registry.Entry, error) {
+	if err := removeContainerIfExists(engine, project.ContainerName(info.ID)); err != nil {
+		return registry.Entry{}, err
+	}
+	entry, err := createContainer(engine, opts, info, includeDockerSocket)
+	if err != nil {
+		return registry.Entry{}, err
+	}
+	if err := saveRegistryEntry(regPath, entry); err != nil {
+		return registry.Entry{}, err
+	}
+	return entry, nil
+}
+
+func saveRegistryEntry(regPath string, entry registry.Entry) error {
+	return withRegistryFileLock(regPath, func() error {
+		reg, err := registry.Load(regPath)
+		if err != nil {
+			return err
+		}
+		if reg.Entries == nil {
+			reg.Entries = map[string]registry.Entry{}
+		}
+		reg.Entries[entry.ID] = entry
+		return registry.Save(regPath, reg)
+	})
+}
+
+func loadRegistryEntry(regPath, id string) (registry.Entry, error) {
+	var entry registry.Entry
+	err := withRegistryFileLock(regPath, func() error {
+		reg, err := registry.Load(regPath)
+		if err != nil {
+			return err
+		}
+		e, ok := reg.Entries[id]
+		if !ok {
+			return fmt.Errorf("project not found in registry: %s", id)
+		}
+		entry = e
+		return nil
+	})
+	return entry, err
+}
+
+func touchRegistryEntry(regPath string, info project.Info, imageTag string) error {
+	now := time.Now().UTC()
+	return withRegistryFileLock(regPath, func() error {
+		reg, err := registry.Load(regPath)
+		if err != nil {
+			return err
+		}
+		if reg.Entries == nil {
+			reg.Entries = map[string]registry.Entry{}
+		}
+		entry, ok := reg.Entries[info.ID]
+		if !ok {
+			entry = registry.Entry{
+				ID:        info.ID,
+				Path:      info.Root,
+				ImageTag:  imageTag,
+				CreatedAt: now,
+			}
+		}
+		entry.LastUsed = now
+		reg.Entries[info.ID] = entry
+		return registry.Save(regPath, reg)
+	})
 }
 
 func containerMounts(info project.Info, home string, readonly, includeDockerSocket bool) []docker.Mount {
@@ -431,45 +551,21 @@ func newRebaseCmd(opts options) *cobra.Command {
 				id = info.ID
 			}
 			name := project.ContainerName(id)
-			_ = engine.RemoveContainer(name)
 
 			regPath, err := registry.DefaultPath()
 			if err != nil {
 				return err
 			}
-			var entry registry.Entry
-			if err := withRegistryFileLock(regPath, func() error {
-				reg, err := registry.Load(regPath)
-				if err != nil {
-					return err
-				}
-				e, ok := reg.Entries[id]
-				if !ok {
-					return fmt.Errorf("project not found in registry: %s", id)
-				}
-				entry = e
-				return nil
-			}); err != nil {
+			entry, err := loadRegistryEntry(regPath, id)
+			if err != nil {
 				return err
 			}
 
 			info := project.Info{ID: id, Root: entry.Path}
-			newEntry, err := createContainer(engine, opts, info, pathExists(hostDockerSocketPath))
-			if err != nil {
+			if _, err := recreateProjectContainer(engine, opts, info, pathExists(hostDockerSocketPath), regPath); err != nil {
 				return err
 			}
-			newEntry.LastUsed = time.Now().UTC()
-			if err := withRegistryFileLock(regPath, func() error {
-				reg, err := registry.Load(regPath)
-				if err != nil {
-					return err
-				}
-				if reg.Entries == nil {
-					reg.Entries = map[string]registry.Entry{}
-				}
-				reg.Entries[id] = newEntry
-				return registry.Save(regPath, reg)
-			}); err != nil {
+			if err := touchRegistryEntry(regPath, info, opts.ImageTag); err != nil {
 				return err
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "rebased container", name)

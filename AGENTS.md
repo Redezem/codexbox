@@ -48,6 +48,7 @@ Important workflow note:
 
 ## Runtime Behavior
 - Default command path: `codexbox` -> container start -> `codexbox-launch` -> peon-ping mobile config ensure -> peon-ping config ensure -> peon-ping startup test -> `codex --dangerously-bypass-approvals-and-sandbox`.
+- On interactive default runs, if the configured image tag resolves to a different image ID than the existing project container, `codexbox` prompts: `A new Codexbox image exists, do you want to rebase? (Y/n)`. Enter defaults to yes; `n` keeps the existing container. Non-interactive runs skip the prompt.
 - `--shell` bypasses the launch wrapper and starts `bash`.
 - `--cmd` bypasses the launch wrapper and runs `sh -lc <command>`.
 - Containers mount the project at `/workspace`.
@@ -127,6 +128,7 @@ Important workflow note:
 - `rebase [project]` requires the project to exist in the registry first.
 - Container creation mounts the host `~/.codex`; if you change `CODEX_HOME` behavior, review both mount logic and launch script config resolution.
 - Existing containers do not gain new mounts automatically. Recreate with `codexbox --fresh` or `codexbox rebase` when mount behavior changes.
+- Existing containers also keep their original image until they are recreated. After `codexbox image build` or `codexbox image update`, normal interactive `codexbox` runs prompt to rebase when the configured tag points at a newer image ID.
 - Linux containers run as the host UID:GID. Any change that assumes root in the workspace can break real usage.
 - peon-ping config has evolved. Upstream now uses `default_pack`, with `active_pack` as a legacy compatibility concern. Do not reintroduce stale assumptions.
 - peon-ping startup validation in `codexbox-launch` is intentionally non-fatal. Keep that property unless there is a strong product reason to block startup.

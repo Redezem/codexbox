@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"codexbox/internal/project"
@@ -113,5 +115,98 @@ func TestPathExists(t *testing.T) {
 	}
 	if pathExists(filepath.Join(dir, "missing.txt")) {
 		t.Fatalf("expected missing path to return false")
+	}
+}
+
+func TestImageIDsDiffer(t *testing.T) {
+	tests := []struct {
+		name          string
+		containerID   string
+		latestImageID string
+		want          bool
+	}{
+		{name: "different ids", containerID: "sha256:old", latestImageID: "sha256:new", want: true},
+		{name: "same ids", containerID: "sha256:same", latestImageID: "sha256:same", want: false},
+		{name: "missing container id", containerID: "", latestImageID: "sha256:new", want: false},
+		{name: "missing latest id", containerID: "sha256:old", latestImageID: "", want: false},
+		{name: "trims whitespace", containerID: " sha256:old ", latestImageID: "\tsha256:new\n", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := imageIDsDiffer(tt.containerID, tt.latestImageID); got != tt.want {
+				t.Fatalf("imageIDsDiffer(%q, %q) = %v, want %v", tt.containerID, tt.latestImageID, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParsePromptDefaultYes(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+		ok    bool
+	}{
+		{name: "empty defaults yes", input: "", want: true, ok: true},
+		{name: "whitespace defaults yes", input: "   ", want: true, ok: true},
+		{name: "lower y", input: "y", want: true, ok: true},
+		{name: "upper yes", input: "YES", want: true, ok: true},
+		{name: "lower n", input: "n", want: false, ok: true},
+		{name: "mixed no", input: "No", want: false, ok: true},
+		{name: "invalid", input: "maybe", want: false, ok: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := parsePromptDefaultYes(tt.input)
+			if got != tt.want || ok != tt.ok {
+				t.Fatalf("parsePromptDefaultYes(%q) = (%v, %v), want (%v, %v)", tt.input, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestPromptForImageRebase(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         string
+		want          bool
+		wantPrompts   int
+		wantErrSubstr string
+	}{
+		{name: "enter defaults yes", input: "\n", want: true, wantPrompts: 1},
+		{name: "explicit yes", input: "y\n", want: true, wantPrompts: 1},
+		{name: "explicit no", input: "n\n", want: false, wantPrompts: 1},
+		{name: "invalid then no", input: "maybe\nn\n", want: false, wantPrompts: 2},
+		{name: "invalid eof errors", input: "maybe", wantPrompts: 1, wantErrSubstr: "invalid prompt response"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			got, err := promptForImageRebase(strings.NewReader(tt.input), &out)
+			if tt.wantErrSubstr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErrSubstr) {
+					t.Fatalf("promptForImageRebase error = %v, want substring %q", err, tt.wantErrSubstr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("promptForImageRebase error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("promptForImageRebase(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+			if prompts := strings.Count(out.String(), "A new Codexbox image exists, do you want to rebase? (Y/n) "); prompts != tt.wantPrompts {
+				t.Fatalf("prompt count = %d, want %d; output=%q", prompts, tt.wantPrompts, out.String())
+			}
+		})
+	}
+}
+
+func TestIsInteractiveSession(t *testing.T) {
+	if isInteractiveSession(strings.NewReader(""), &bytes.Buffer{}) {
+		t.Fatalf("expected non-file streams to be treated as non-interactive")
 	}
 }

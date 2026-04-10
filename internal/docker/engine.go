@@ -88,11 +88,27 @@ func (e Engine) ContainerStatus(name string) (string, error) {
 }
 
 func (e Engine) ImageExists(tag string) (bool, error) {
-	out, err := e.runOutput("image", "inspect", tag, "--format", "{{.Id}}")
+	out, err := e.ImageID(tag)
 	if err != nil {
 		return false, nil
 	}
-	return strings.TrimSpace(out) != "", nil
+	return out != "", nil
+}
+
+func (e Engine) ImageID(tag string) (string, error) {
+	out, err := e.runOutput("image", "inspect", tag, "--format", "{{.Id}}")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func (e Engine) ContainerImageID(name string) (string, error) {
+	out, err := e.runOutput("container", "inspect", name, "--format", "{{.Image}}")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
 }
 
 func (e Engine) CreateContainer(opts CreateOpts) error {

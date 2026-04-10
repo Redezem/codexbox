@@ -97,6 +97,7 @@ First run:
 Subsequent runs:
 
 - Starts the container
+- If the configured image tag now points at a newer image than the existing container was created from, interactive runs prompt: `A new Codexbox image exists, do you want to rebase? (Y/n)`
 - Runs `codexbox-launch`, which prepares peon-ping integration, applies optional Pushover mobile notification config, and then starts `codex`
 - Warns if host `/var/run/docker.sock` is unavailable: `codexbox: warning: Unable to pass through docker socket, docker capabilities may not function`
 
@@ -196,6 +197,7 @@ It also installs `@openai/codex`, peon-ping, and the `codexbox-launch` wrapper u
 `image update` pulls the latest base layers and rebuilds without using build cache.
 
 New containers created with that tag will use the rebuilt image automatically. Existing project containers keep their current container until you recreate them with `codexbox rebase` or `codexbox --fresh`.
+Interactive `codexbox` runs also detect when the configured image tag resolves to a newer image ID than the existing project container and prompt to rebase. Pressing Enter accepts the prompt and rebases; `n` skips it. Non-interactive runs skip the prompt and keep the existing container.
 This also applies to socket mount updates such as Docker socket passthrough.
 
 ---
